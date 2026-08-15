@@ -1,0 +1,13 @@
+{
+  "stand": "2026-08-14",
+  "hinweis": "Manuell gepflegte Basisliste dauerhafter geopolitischer Risikoherde mit Marktbezug. Wird in der App um tagesaktuelle Schlagzeilen (Nachrichten-Feed, automatisch) ergänzt. Basisliste bei Bedarf gegen die Quelle aktualisieren.",
+  "quelle": "https://www.cfr.org/reports/conflicts-watch-2026",
+  "konflikte": [
+    {"name": "Russland–Ukraine-Krieg", "relevanz": "Öl-/Gaspreise, Getreide, europäische Sicherheit, NATO-Eskalationsrisiko"},
+    {"name": "Nahost (Israel–Gaza/Westjordanland, Iran, Libanon/Hisbollah)", "relevanz": "Ölpreis, Schifffahrtsrouten Rotes Meer/Golf, Rüstungs-/Verteidigungswerte"},
+    {"name": "Taiwan-Straße (China–Taiwan/USA)", "relevanz": "Halbleiter-Lieferketten, Tech-Sektor, globale Handelsspannungen"},
+    {"name": "Jemen/Rotes Meer (Houthi-Angriffe auf Schifffahrt)", "relevanz": "Frachtraten, Suezkanal-Route, Versicherungskosten Schifffahrt"},
+    {"name": "Venezuela (US-Operationen)", "relevanz": "Energiemärkte, westliche Hemisphäre, Ölpreis"},
+    {"name": "Sudan-Bürgerkrieg", "relevanz": "Humanitär, regionale Instabilität Afrika, eher geringer direkter Marktbezug"}
+  ]
+}

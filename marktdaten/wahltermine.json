@@ -1,0 +1,14 @@
+{
+  "stand": "2026-08-14",
+  "hinweis": "Manuell gepflegte Auswahl markt­relevanter Wahlen in großen Volkswirtschaften. Einmal jährlich gegen die Quelle prüfen/ergänzen.",
+  "quelle": "https://en.wikipedia.org/wiki/2026_national_electoral_calendar",
+  "termine": [
+    {"datum": "2026-09-13", "land": "Schweden", "typ": "Parlamentswahl"},
+    {"datum": "2026-09-20", "land": "Russland", "typ": "Duma-Wahl (Legislative)"},
+    {"datum": "2026-10-04", "land": "Brasilien", "typ": "Präsidentschaftswahl (1. Runde)"},
+    {"datum": "2026-10-25", "land": "Brasilien", "typ": "Präsidentschaftswahl (Stichwahl, falls nötig)"},
+    {"datum": "2026-10-27", "land": "Israel", "typ": "Knesset-Wahl"},
+    {"datum": "2026-11-03", "land": "USA", "typ": "Kongresswahl (Midterms, Repräsentantenhaus & Senat)"},
+    {"datum": "2026-11-07", "land": "Neuseeland", "typ": "Parlamentswahl"}
+  ]
+}

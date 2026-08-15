@@ -43,13 +43,13 @@ COLOR_CARD = "#ffffff"
 COLOR_TEXT = "#101828"
 COLOR_TEXT_SECONDARY = "#667085"
 COLOR_BORDER = "#e4e7ec"
-COLOR_ACCENT = "#2f6feb"
-COLOR_ACCENT_HOVER = "#255bc9"
+COLOR_ACCENT = "#0957a2"
+COLOR_ACCENT_HOVER = "#074a8a"
 COLOR_DISABLED = "#c7c7cc"
 COLOR_GREEN = "#16a34a"
 COLOR_GREEN_BG = "#e9f9ef"
 COLOR_RED = "#e0333f"
-COLOR_BLUE_BG = "#eaf1fe"
+COLOR_BLUE_BG = "#e7eff7"
 COLOR_TAB_INACTIVE = "#eceef1"
 
 
@@ -128,31 +128,38 @@ class RoundedButton(tk.Canvas):
 
 class TabBar(tk.Canvas):
     """Reiterleiste im App-Stil: jeder Reiter ist eine eigene abgerundete Fläche mit
-    sichtbarem Abstand zum nächsten – der aktive Reiter ist weiß mit dünnem Rand,
-    inaktive Reiter sind dezent grau. Bewusst ohne Blau, das bleibt den echten
-    Aktionen (Buttons, Kennzahlen) vorbehalten.
+    sichtbarem Abstand zum nächsten – der aktive Reiter ist weiß mit dünnem Rand und
+    blauer Schrift, inaktive Reiter sind dezent grau.
     """
 
-    def __init__(self, parent, items: list[str], command, bg=COLOR_BG, height=44,
+    def __init__(self, parent, items: list[tuple[str, str]], command, bg=COLOR_BG, height=44,
                  inactive_bg=COLOR_TAB_INACTIVE, gap=8, font=None):
         super().__init__(parent, bg=bg, highlightthickness=0, height=height)
-        self.items = items
+        self.items = items  # Liste aus (key, Anzeigetext), key = Ticker
         self.command = command
         self.inactive_bg = inactive_bg
         self.gap = gap
-        self.font = font
-        self.selected = items[0] if items else None
+        self.font = tkfont.Font(font=font) if font else tkfont.nametofont("TkDefaultFont")
+        self.selected = items[0][0] if items else None
         self._segments: dict[str, tuple[float, float]] = {}
         self.bind("<Configure>", lambda _e: self._redraw())
         self.bind("<Button-1>", self._on_click)
 
-    def select(self, item: str, fire: bool = True) -> None:
-        if item not in self.items:
+    def select(self, key: str, fire: bool = True) -> None:
+        if key not in dict(self.items):
             return
-        self.selected = item
+        self.selected = key
         self._redraw()
         if fire and self.command:
-            self.command(item)
+            self.command(key)
+
+    def _fit_text(self, text: str, max_width: float) -> str:
+        if self.font.measure(text) <= max_width:
+            return text
+        truncated = text
+        while truncated and self.font.measure(truncated + "…") > max_width:
+            truncated = truncated[:-1]
+        return (truncated + "…") if truncated else text
 
     def _redraw(self) -> None:
         self.delete("all")
@@ -163,21 +170,22 @@ class TabBar(tk.Canvas):
             return
         seg_w = width / n
         self._segments = {}
-        for i, item in enumerate(self.items):
+        for i, (key, label) in enumerate(self.items):
             x1, x2 = i * seg_w, (i + 1) * seg_w
-            self._segments[item] = (x1, x2)
-            selected = item == self.selected
+            self._segments[key] = (x1, x2)
+            selected = key == self.selected
             bx1, bx2 = x1 + self.gap / 2, x2 - self.gap / 2
             fill = COLOR_CARD if selected else self.inactive_bg
             outline = COLOR_BORDER if selected else ""
             self.create_polygon(round_rect_points(bx1, 3, bx2, height - 3, 12), smooth=True, fill=fill, outline=outline, width=1)
-            color = COLOR_TEXT if selected else COLOR_TEXT_SECONDARY
-            self.create_text((x1 + x2) / 2, height / 2, text=item, fill=color, font=self.font)
+            color = COLOR_ACCENT if selected else COLOR_TEXT_SECONDARY
+            text = self._fit_text(label, (bx2 - bx1) - 16)
+            self.create_text((x1 + x2) / 2, height / 2, text=text, fill=color, font=self.font)
 
     def _on_click(self, event) -> None:
-        for item, (x1, x2) in self._segments.items():
-            if x1 <= event.x <= x2 and item != self.selected:
-                self.select(item)
+        for key, (x1, x2) in self._segments.items():
+            if x1 <= event.x <= x2 and key != self.selected:
+                self.select(key)
                 return
 
 
@@ -1019,8 +1027,39 @@ class AktienScreenerApp(tk.Tk):
             + np.minimum(results["Support-Tests"], 5) * 0.8
         ).round(1)
         eligible = results[eligible_mask].sort_values("Ranking-Score", ascending=False).reset_index(drop=True)
-        a_count = min(12, max(3, math.ceil(len(eligible) * 0.15))) if len(eligible) else 0
-        return eligible.head(a_count)
+        a_count = min(12, max(5, math.ceil(len(eligible) * 0.15))) if len(eligible) else 0
+        top = eligible.head(a_count).copy()
+        if not top.empty:
+            top["Nächste Berichtszahlen"] = [self._fetch_next_earnings(t) for t in top["Ticker"]]
+        return top
+
+    def _fetch_next_earnings(self, ticker: str) -> date | None:
+        self.status_var.set(f"Nächste Berichtszahlen prüfen: {ticker}")
+        try:
+            calendar = yf.Ticker(ticker).calendar
+            raw = calendar.get("Earnings Date") if isinstance(calendar, dict) else None
+            if raw is None and hasattr(calendar, "loc"):
+                try:
+                    raw = calendar.loc["Earnings Date"]
+                except Exception:
+                    raw = None
+            if raw is None:
+                return None
+            candidates = raw if isinstance(raw, (list, tuple)) else [raw]
+            parsed = []
+            for value in candidates:
+                if value is None:
+                    continue
+                try:
+                    parsed.append(pd.Timestamp(value).date())
+                except Exception:
+                    continue
+            if not parsed:
+                return None
+            future = sorted(d for d in parsed if d >= date.today())
+            return future[0] if future else sorted(parsed)[0]
+        except Exception:
+            return None
 
     def _on_scan_failed(self, exc: Exception) -> None:
         self.running = False
@@ -1046,8 +1085,9 @@ class AktienScreenerApp(tk.Tk):
     def _render_candidates(self, candidates: pd.DataFrame) -> None:
         for widget in self.body.winfo_children():
             widget.destroy()
-        tickers = list(candidates["Ticker"])
-        tabbar = TabBar(self.body, tickers, command=self._show_candidate, font=(self.font_family, 12, "bold"))
+        tab_items = [(row["Ticker"], f"{row['Ticker']} · {row.get('Name', '')}" if row.get("Name") else row["Ticker"])
+                     for _, row in candidates.iterrows()]
+        tabbar = TabBar(self.body, tab_items, command=self._show_candidate, font=(self.font_family, 12, "bold"))
         tabbar.pack(fill="x", pady=(0, 16))
         scroll_area = ScrollableArea(self.body)
         scroll_area.pack(fill="both", expand=True)
@@ -1058,8 +1098,8 @@ class AktienScreenerApp(tk.Tk):
             tab = ttk.Frame(content, padding=(0, 0, 0, 0))
             self._build_candidate_tab(tab, row, rank, total)
             self._candidate_frames[row["Ticker"]] = tab
-        if tickers:
-            self._show_candidate(tickers[0])
+        if tab_items:
+            self._show_candidate(tab_items[0][0])
 
     def _show_candidate(self, ticker: str) -> None:
         for frame in self._candidate_frames.values():
@@ -1090,20 +1130,12 @@ class AktienScreenerApp(tk.Tk):
         # EMA über die komplette Historie berechnen (wie in analyze_ticker), nicht nur über
         # das Anzeigefenster – sonst weichen die im Chart gezeichneten EMA-Linien von den
         # EMA-Werten ab, die für "Über EMA50/200" im Kriterientext verwendet werden.
-        ema20_full = full["Close"].ewm(span=20, adjust=False).mean()
+        # EMA50/EMA200 auf Basis des Schlusskurses, wie bei TradingView.
         ema50_full = full["Close"].ewm(span=50, adjust=False).mean()
-        rsi_full = rsi(full["Close"])
-        macd_full = full["Close"].ewm(span=12, adjust=False).mean() - full["Close"].ewm(span=26, adjust=False).mean()
-        signal_full = macd_full.ewm(span=9, adjust=False).mean()
-        hist_full = macd_full - signal_full
+        ema200_full = full["Close"].ewm(span=200, adjust=False).mean()
         chart_df = full.tail(180)
-        ema20 = ema20_full.reindex(chart_df.index)
         ema50 = ema50_full.reindex(chart_df.index)
-        rsi_series = rsi_full.reindex(chart_df.index)
-        macd_line = macd_full.reindex(chart_df.index)
-        signal_line = signal_full.reindex(chart_df.index)
-        hist = hist_full.reindex(chart_df.index)
-        hist_colors = [COLOR_GREEN if v >= 0 else COLOR_RED for v in hist.fillna(0)]
+        ema200 = ema200_full.reindex(chart_df.index)
 
         marketcolors = mpf.make_marketcolors(
             up=COLOR_GREEN, down=COLOR_RED, edge={"up": COLOR_GREEN, "down": COLOR_RED},
@@ -1120,26 +1152,17 @@ class AktienScreenerApp(tk.Tk):
             },
         )
         addplots = [
-            mpf.make_addplot(ema20, color="#409cff", width=1.1),
-            mpf.make_addplot(ema50, color=COLOR_ACCENT, width=1.6),
-            mpf.make_addplot(hist, type="bar", panel=1, color=hist_colors, width=0.7, ylabel="MACD"),
-            mpf.make_addplot(macd_line, panel=1, color=COLOR_ACCENT, width=1.1),
-            mpf.make_addplot(signal_line, panel=1, color="#ff9f0a", width=1.0),
-            mpf.make_addplot(rsi_series, panel=2, color=COLOR_ACCENT, width=1.2, ylabel="RSI"),
+            mpf.make_addplot(ema50, color=COLOR_ACCENT, width=1.4),
+            mpf.make_addplot(ema200, color="#8fb4d9", width=1.4),
         ]
         name = row.get("Name", "")
         chart_title = f"{row['Ticker']} · {name}" if name else str(row["Ticker"])
         fig, axlist = mpf.plot(
             chart_df, type="candle", style=style, addplot=addplots, returnfig=True,
-            volume=False, figsize=(7.6, 7.2), tight_layout=True, datetime_format="%d.%m.", xrotation=0,
-            title=chart_title, panel_ratios=(3, 1, 1),
+            volume=False, figsize=(7.4, 4.9), tight_layout=True, datetime_format="%d.%m.", xrotation=0,
+            title=chart_title,
         )
-        axis, macd_axis, rsi_axis = axlist[0], axlist[1], axlist[2]
-        macd_axis.axhline(0, linewidth=0.8, color=COLOR_BORDER)
-        rsi_axis.axhspan(30, 70, color=COLOR_ACCENT, alpha=0.06, zorder=0)
-        rsi_axis.axhline(70, linestyle=":", linewidth=1, color=COLOR_TEXT_SECONDARY, alpha=0.7)
-        rsi_axis.axhline(30, linestyle=":", linewidth=1, color=COLOR_TEXT_SECONDARY, alpha=0.7)
-        rsi_axis.set_ylim(0, 100)
+        axis = axlist[0]
 
         pos_of = {d.strftime("%Y-%m-%d"): i for i, d in enumerate(chart_df.index)}
         last_pos = len(chart_df) - 1
@@ -1295,6 +1318,10 @@ class AktienScreenerApp(tk.Tk):
             lines.append(f"Chartmuster: {row['Erkannte Muster']}")
         if row.get("Ausbruch erkannt") and row["Ausbruch erkannt"] != "Nein":
             lines.append(f"Ausbruch: {row['Ausbruch erkannt']}")
+        earnings = row.get("Nächste Berichtszahlen")
+        if pd.notna(earnings):
+            tage = (earnings - date.today()).days
+            lines.append(f"Nächste Quartals-/Jahreszahlen: {earnings.strftime('%d.%m.%Y')} (in {tage} Tagen)")
         if not lines:
             lines.append("Technische Kennzahlen erfüllen die A-Kandidat-Kriterien.")
         return lines

@@ -38,18 +38,19 @@ STANDARD_FIELDS = {"Open", "High", "Low", "Close", "Adj Close", "Volume", "Divid
 # ---------------------------------------------------------------------------
 # Apple-inspiriertes Design: helle Oberfläche, ein Akzentton, viel Weißraum.
 # ---------------------------------------------------------------------------
-COLOR_BG = "#f5f5f7"
+COLOR_BG = "#f5f6f8"
 COLOR_CARD = "#ffffff"
-COLOR_TEXT = "#1d1d1f"
-COLOR_TEXT_SECONDARY = "#6e6e73"
-COLOR_BORDER = "#d2d2d7"
-COLOR_ACCENT = "#0071e3"
-COLOR_ACCENT_HOVER = "#0077ed"
+COLOR_TEXT = "#101828"
+COLOR_TEXT_SECONDARY = "#667085"
+COLOR_BORDER = "#e4e7ec"
+COLOR_ACCENT = "#2f6feb"
+COLOR_ACCENT_HOVER = "#255bc9"
 COLOR_DISABLED = "#c7c7cc"
-COLOR_GREEN = "#248a3d"
-COLOR_GREEN_BG = "#e6f6ea"
-COLOR_RED = "#d70015"
-COLOR_BLUE_BG = "#e8f1fd"
+COLOR_GREEN = "#16a34a"
+COLOR_GREEN_BG = "#e9f9ef"
+COLOR_RED = "#e0333f"
+COLOR_BLUE_BG = "#eaf1fe"
+COLOR_TAB_INACTIVE = "#eceef1"
 
 
 def pick_font_family() -> str:
@@ -125,21 +126,21 @@ class RoundedButton(tk.Canvas):
             self.command()
 
 
-class PillTabBar(tk.Canvas):
-    """Segmented-Control-artige Reiterleiste im App-Stil: helle Pille als Spur,
-    ausgewähltes Segment blau gefüllt – ersetzt die kantigen ttk.Notebook-Reiter.
+class TabBar(tk.Canvas):
+    """Reiterleiste im App-Stil: jeder Reiter ist eine eigene abgerundete Fläche mit
+    sichtbarem Abstand zum nächsten – der aktive Reiter ist weiß mit dünnem Rand,
+    inaktive Reiter sind dezent grau. Bewusst ohne Blau, das bleibt den echten
+    Aktionen (Buttons, Kennzahlen) vorbehalten.
     """
 
     def __init__(self, parent, items: list[str], command, bg=COLOR_BG, height=44,
-                 track_bg="#e8e8ed", accent=COLOR_ACCENT, fg=COLOR_TEXT_SECONDARY, font=None):
+                 inactive_bg=COLOR_TAB_INACTIVE, gap=8, font=None):
         super().__init__(parent, bg=bg, highlightthickness=0, height=height)
         self.items = items
         self.command = command
-        self.track_bg = track_bg
-        self.accent = accent
-        self.fg = fg
+        self.inactive_bg = inactive_bg
+        self.gap = gap
         self.font = font
-        self.pad = 4
         self.selected = items[0] if items else None
         self._segments: dict[str, tuple[float, float]] = {}
         self.bind("<Configure>", lambda _e: self._redraw())
@@ -160,18 +161,17 @@ class PillTabBar(tk.Canvas):
         n = len(self.items)
         if n == 0:
             return
-        self.create_polygon(round_rect_points(0, 0, width, height, height / 2), smooth=True, fill=self.track_bg, outline="")
         seg_w = width / n
         self._segments = {}
         for i, item in enumerate(self.items):
             x1, x2 = i * seg_w, (i + 1) * seg_w
             self._segments[item] = (x1, x2)
-            if item == self.selected:
-                self.create_polygon(
-                    round_rect_points(x1 + self.pad, self.pad, x2 - self.pad, height - self.pad, (height - 2 * self.pad) / 2),
-                    smooth=True, fill=self.accent, outline="",
-                )
-            color = "white" if item == self.selected else self.fg
+            selected = item == self.selected
+            bx1, bx2 = x1 + self.gap / 2, x2 - self.gap / 2
+            fill = COLOR_CARD if selected else self.inactive_bg
+            outline = COLOR_BORDER if selected else ""
+            self.create_polygon(round_rect_points(bx1, 3, bx2, height - 3, 12), smooth=True, fill=fill, outline=outline, width=1)
+            color = COLOR_TEXT if selected else COLOR_TEXT_SECONDARY
             self.create_text((x1 + x2) / 2, height / 2, text=item, fill=color, font=self.font)
 
     def _on_click(self, event) -> None:
@@ -179,6 +179,24 @@ class PillTabBar(tk.Canvas):
             if x1 <= event.x <= x2 and item != self.selected:
                 self.select(item)
                 return
+
+
+class ScrollableArea(tk.Frame):
+    """Vertikal scrollbarer Container – nötig, da der mehrteilige Chart (Kurs + MACD + RSI)
+    plus Info-Panel öfter höher ist als das Fenster."""
+
+    def __init__(self, parent, bg=COLOR_BG):
+        super().__init__(parent, bg=bg)
+        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = tk.Frame(self.canvas, bg=bg)
+        self.inner.bind("<Configure>", lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self._window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfig(self._window, width=e.width))
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
 
 # =============================================================================
@@ -844,7 +862,7 @@ class AktienScreenerApp(tk.Tk):
         self.font_family = pick_font_family()
         self.title(APP_TITLE)
         self.configure(bg=COLOR_BG)
-        self.geometry("1180x820")
+        self.geometry("1200x900")
         self.minsize(980, 680)
 
         self.data: pd.DataFrame | None = None
@@ -1029,10 +1047,11 @@ class AktienScreenerApp(tk.Tk):
         for widget in self.body.winfo_children():
             widget.destroy()
         tickers = list(candidates["Ticker"])
-        tabbar = PillTabBar(self.body, tickers, command=self._show_candidate, font=(self.font_family, 12, "bold"))
+        tabbar = TabBar(self.body, tickers, command=self._show_candidate, font=(self.font_family, 12, "bold"))
         tabbar.pack(fill="x", pady=(0, 16))
-        content = ttk.Frame(self.body)
-        content.pack(fill="both", expand=True)
+        scroll_area = ScrollableArea(self.body)
+        scroll_area.pack(fill="both", expand=True)
+        content = scroll_area.inner
         self._candidate_frames: dict[str, ttk.Frame] = {}
         total = len(candidates)
         for rank, (_, row) in enumerate(candidates.iterrows(), start=1):
@@ -1073,9 +1092,18 @@ class AktienScreenerApp(tk.Tk):
         # EMA-Werten ab, die für "Über EMA50/200" im Kriterientext verwendet werden.
         ema20_full = full["Close"].ewm(span=20, adjust=False).mean()
         ema50_full = full["Close"].ewm(span=50, adjust=False).mean()
+        rsi_full = rsi(full["Close"])
+        macd_full = full["Close"].ewm(span=12, adjust=False).mean() - full["Close"].ewm(span=26, adjust=False).mean()
+        signal_full = macd_full.ewm(span=9, adjust=False).mean()
+        hist_full = macd_full - signal_full
         chart_df = full.tail(180)
         ema20 = ema20_full.reindex(chart_df.index)
         ema50 = ema50_full.reindex(chart_df.index)
+        rsi_series = rsi_full.reindex(chart_df.index)
+        macd_line = macd_full.reindex(chart_df.index)
+        signal_line = signal_full.reindex(chart_df.index)
+        hist = hist_full.reindex(chart_df.index)
+        hist_colors = [COLOR_GREEN if v >= 0 else COLOR_RED for v in hist.fillna(0)]
 
         marketcolors = mpf.make_marketcolors(
             up=COLOR_GREEN, down=COLOR_RED, edge={"up": COLOR_GREEN, "down": COLOR_RED},
@@ -1094,15 +1122,24 @@ class AktienScreenerApp(tk.Tk):
         addplots = [
             mpf.make_addplot(ema20, color="#409cff", width=1.1),
             mpf.make_addplot(ema50, color=COLOR_ACCENT, width=1.6),
+            mpf.make_addplot(hist, type="bar", panel=1, color=hist_colors, width=0.7, ylabel="MACD"),
+            mpf.make_addplot(macd_line, panel=1, color=COLOR_ACCENT, width=1.1),
+            mpf.make_addplot(signal_line, panel=1, color="#ff9f0a", width=1.0),
+            mpf.make_addplot(rsi_series, panel=2, color=COLOR_ACCENT, width=1.2, ylabel="RSI"),
         ]
         name = row.get("Name", "")
         chart_title = f"{row['Ticker']} · {name}" if name else str(row["Ticker"])
         fig, axlist = mpf.plot(
             chart_df, type="candle", style=style, addplot=addplots, returnfig=True,
-            volume=False, figsize=(7.4, 4.9), tight_layout=True, datetime_format="%d.%m.", xrotation=0,
-            title=chart_title,
+            volume=False, figsize=(7.6, 7.2), tight_layout=True, datetime_format="%d.%m.", xrotation=0,
+            title=chart_title, panel_ratios=(3, 1, 1),
         )
-        axis = axlist[0]
+        axis, macd_axis, rsi_axis = axlist[0], axlist[1], axlist[2]
+        macd_axis.axhline(0, linewidth=0.8, color=COLOR_BORDER)
+        rsi_axis.axhspan(30, 70, color=COLOR_ACCENT, alpha=0.06, zorder=0)
+        rsi_axis.axhline(70, linestyle=":", linewidth=1, color=COLOR_TEXT_SECONDARY, alpha=0.7)
+        rsi_axis.axhline(30, linestyle=":", linewidth=1, color=COLOR_TEXT_SECONDARY, alpha=0.7)
+        rsi_axis.set_ylim(0, 100)
 
         pos_of = {d.strftime("%Y-%m-%d"): i for i, d in enumerate(chart_df.index)}
         last_pos = len(chart_df) - 1
@@ -1190,51 +1227,56 @@ class AktienScreenerApp(tk.Tk):
         left.pack(side="left")
         tk.Label(left, text=row["Ticker"], bg=COLOR_CARD, fg=COLOR_TEXT, font=(self.font_family, 19, "bold")).pack(side="left")
         tk.Label(left, text=f"  {row.get('Name', '')}", bg=COLOR_CARD, fg=COLOR_TEXT_SECONDARY, font=(self.font_family, 13)).pack(side="left")
-
-        right = tk.Frame(header, bg=COLOR_CARD)
-        right.pack(side="right")
-        rank_row = tk.Frame(right, bg=COLOR_CARD)
-        rank_row.pack(side="top", anchor="e")
-        self._chip(rank_row, f"A-Kandidat · Rang {rank}/{total}", COLOR_BLUE_BG, COLOR_ACCENT)
         ticker = row["Ticker"]
-        RoundedButton(
-            right, text="In TradingView öffnen ↗", command=lambda t=ticker: webbrowser.open(tradingview_url(t)),
-            width=210, height=34, radius=17, bg=COLOR_CARD, accent=COLOR_ACCENT,
-            font=(self.font_family, 10, "bold"), outline=True,
-        ).pack(side="top", anchor="e", pady=(8, 0))
+        link = tk.Label(left, text="  ↗ TradingView", bg=COLOR_CARD, fg=COLOR_ACCENT, font=(self.font_family, 11, "underline"), cursor="hand2")
+        link.pack(side="left", padx=(6, 0))
+        link.bind("<Button-1>", lambda _e, t=ticker: webbrowser.open(tradingview_url(t)))
 
-        chips = tk.Frame(inner, bg=COLOR_CARD)
-        chips.pack(fill="x", pady=(10, 0))
-        self._chip(chips, f"Score {row['Technischer Score']:.0f}", COLOR_BLUE_BG, COLOR_ACCENT)
+        self._chip(header, f"Kandidat · Rang {rank}/{total}", COLOR_BLUE_BG, COLOR_ACCENT, side="right")
+
+        stats = tk.Frame(inner, bg=COLOR_CARD)
+        stats.pack(fill="x", pady=(14, 0))
+        self._stat_tile(stats, "Score", f"{row['Technischer Score']:.0f}")
         crv = row.get("CRV bis Widerstand")
-        if pd.notna(crv):
-            self._chip(chips, f"CRV {float(crv):.1f}", COLOR_GREEN_BG, COLOR_GREEN)
+        self._stat_tile(stats, "CRV", f"{float(crv):.1f}" if pd.notna(crv) else "–", COLOR_GREEN)
         if pd.notna(row.get("RSI14")):
-            self._chip(chips, f"RSI {float(row['RSI14']):.0f}", COLOR_BG, COLOR_TEXT_SECONDARY)
-        self._chip(chips, f"Liquidität {row.get('Liquidität', '')}", COLOR_BG, COLOR_TEXT_SECONDARY)
+            self._stat_tile(stats, "RSI", f"{float(row['RSI14']):.0f}")
+        self._stat_tile(stats, "Liquidität", str(row.get("Liquidität", "")))
 
         bullets = tk.Frame(inner, bg=COLOR_CARD)
-        bullets.pack(fill="x", pady=(14, 0), anchor="w")
+        bullets.pack(fill="x", pady=(16, 0), anchor="w")
         for line in self._criteria_lines(row):
-            tk.Label(bullets, text=f"·  {line}", bg=COLOR_CARD, fg=COLOR_TEXT, font=(self.font_family, 11),
-                     anchor="w", justify="left", wraplength=980).pack(fill="x", pady=1)
+            bullet_row = tk.Frame(bullets, bg=COLOR_CARD)
+            bullet_row.pack(fill="x", pady=2, anchor="w")
+            tk.Label(bullet_row, text="●", bg=COLOR_CARD, fg=COLOR_GREEN, font=(self.font_family, 7)).pack(side="left", padx=(0, 8), anchor="n", pady=(4, 0))
+            tk.Label(bullet_row, text=line, bg=COLOR_CARD, fg=COLOR_TEXT, font=(self.font_family, 11),
+                     anchor="w", justify="left", wraplength=940).pack(side="left", fill="x")
 
+        trade = tk.Frame(inner, bg=COLOR_CARD)
+        trade.pack(fill="x", pady=(16, 0))
         entry = float(row.get("Entry-Idee", row.get("Kurs", np.nan)))
         stop, ziel = row.get("Stop-Idee"), row.get("Exit-Ziel")
-        trade_text = f"Entry {entry:.2f}"
+        self._stat_tile(trade, "Entry", f"{entry:.2f}")
         if pd.notna(stop):
-            trade_text += f"   ·   Stop {float(stop):.2f}"
+            self._stat_tile(trade, "Stop", f"{float(stop):.2f}", COLOR_RED)
         if pd.notna(ziel):
-            trade_text += f"   ·   Ziel {float(ziel):.2f}"
-        tk.Label(inner, text=trade_text, bg=COLOR_CARD, fg=COLOR_TEXT, font=(self.font_family, 12, "bold")).pack(anchor="w", pady=(14, 0))
+            self._stat_tile(trade, "Ziel", f"{float(ziel):.2f}", COLOR_GREEN)
 
         tk.Label(
             inner, text="Vorauswahl, keine Kauf-/Verkaufsempfehlung. Stop-Loss und Exit-Order manuell beim Broker setzen.",
             bg=COLOR_CARD, fg=COLOR_TEXT_SECONDARY, font=(self.font_family, 9, "italic"),
-        ).pack(anchor="w", pady=(10, 0))
+        ).pack(anchor="w", pady=(14, 0))
 
-    def _chip(self, parent: tk.Frame, text: str, bg: str, fg: str) -> None:
-        tk.Label(parent, text=text, bg=bg, fg=fg, font=(self.font_family, 10, "bold"), padx=10, pady=4).pack(side="left", padx=(0, 8))
+    def _chip(self, parent: tk.Frame, text: str, bg: str, fg: str, side: str = "left") -> None:
+        tk.Label(parent, text=text, bg=bg, fg=fg, font=(self.font_family, 10, "bold"), padx=10, pady=4).pack(side=side, padx=(0, 8))
+
+    def _stat_tile(self, parent: tk.Frame, label: str, value: str, value_color: str | None = None) -> None:
+        tile = tk.Frame(parent, bg=COLOR_CARD, highlightbackground=COLOR_BORDER, highlightthickness=1)
+        tile.pack(side="left", padx=(0, 10))
+        inner = tk.Frame(tile, bg=COLOR_CARD)
+        inner.pack(padx=14, pady=8)
+        tk.Label(inner, text=label, bg=COLOR_CARD, fg=COLOR_TEXT_SECONDARY, font=(self.font_family, 9)).pack(anchor="w")
+        tk.Label(inner, text=value, bg=COLOR_CARD, fg=value_color or COLOR_TEXT, font=(self.font_family, 15, "bold")).pack(anchor="w")
 
     @staticmethod
     def _criteria_lines(row: pd.Series) -> list[str]:
